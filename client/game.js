@@ -49,62 +49,39 @@ let walls = [];
 // NETWORKING
 // ============================================================
 function connectToServer() {
-  // Always connect to port 2568 — localtunnel/ngrok forwards it
-  const hostname = window.location.hostname;
-  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-
-  let url;
-  if (isLocal) {
+  var hostname = window.location.hostname;
+  var url;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
     url = 'ws://localhost:2568';
   } else {
-    // Remote (Render): connect to same host
-    url = `${proto}://${hostname}`;
+    url = 'wss://' + hostname;
   }
-
   console.log('[Net] Connecting to:', url);
-  console.log('[Net] Hostname:', hostname);
-  console.log('[Net] Is local:', isLocal);
-  console.log('[Net] Protocol:', proto);
-
-  try {
-    ws = new WebSocket(url);
-    console.log('[Net] WebSocket object created');
-  } catch (e) {
-    console.error('[Net] Failed to create WebSocket:', e);
-    return;
-  }
-
-  ws.onopen = () => {
-    console.log('[Net] WebSocket OPEN!');
+  ws = new WebSocket(url);
+  ws.onopen = function() {
+    console.log('[Net] CONNECTED');
     updateConnStatus('connected', 'Conectado');
   };
-
-  ws.onclose = (event) => {
-    console.log('[Net] WebSocket CLOSED:', event.code, event.reason);
+  ws.onclose = function() {
+    console.log('[Net] Closed');
     updateConnStatus('disconnected', 'Desconectado');
-    // Auto-retry
-    setTimeout(connectToServer, 3000);
   };
-
-  ws.onerror = (err) => {
-    console.error('[Net] WebSocket ERROR');
+  ws.onerror = function() {
+    console.log('[Net] Error');
     updateConnStatus('disconnected', 'Erro');
   };
-
-  ws.onmessage = (event) => {
-    console.log('[Net] Received:', event.data.substring(0, 100));
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'room_created' || data.type === 'room_joined' || data.type === 'error') {
-        handleCommand(data);
-      } else {
-        gameState = data;
-      }
-    } catch (e) {
-      console.error('[Net] Failed to parse message:', e);
+  ws.onmessage = function(event) {
+    var data = JSON.parse(event.data);
+    if (data.type === 'room_created' || data.type === 'room_joined' || data.type === 'error') {
+      handleCommand(data);
+    } else {
+      gameState = data;
     }
   };
+}
+
+function isConnected() {
+  return ws && ws.readyState === WebSocket.OPEN;
 }
 
 function handleCommand(data) {
@@ -733,28 +710,26 @@ function onResize() {
 
 // Button handlers
 document.getElementById('btn-create').addEventListener('click', () => {
-  console.log('[Btn] Create room clicked');
+  // Connect if not connected
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.log('[Btn] Not connected, state:', ws ? ws.readyState : 'null');
-    showStartError('Conectando ao servidor...');
     connectToServer();
-    // Retry multiple times
-    for (let i = 0; i < 10; i++) {
-      setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          console.log('[Btn] Connected! Sending create_room');
-          ws.send(JSON.stringify({ type: 'create_room' }));
-        }
-      }, 1000 * (i + 1));
-    }
-  } else {
-    console.log('[Btn] Already connected, sending create_room');
+  }
+  // Send immediately (will queue if not connected yet)
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'create_room' }));
+  }
+  // If not connected yet, send after 2s once connected
+  if (ws.readyState !== WebSocket.OPEN) {
+    setTimeout(function() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'create_room' }));
+      }
+    }, 2000);
   }
 });
 
 document.getElementById('btn-join').addEventListener('click', joinWithCode);
-document.getElementById('input-code').addEventListener('keydown', (e) => {
+document.getElementById('input-code').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') joinWithCode();
 });
 
