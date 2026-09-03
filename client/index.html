@@ -1,0 +1,263 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mover Madness 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    overflow: hidden;
+    background: #000;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #fff;
+  }
+  canvas { display: block; }
+
+  /* === OVERLAYS === */
+  .overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    background: rgba(10, 10, 30, 0.92);
+    z-index: 100;
+    transition: opacity 0.3s;
+  }
+  .overlay.hidden { display: none; }
+
+  h1 { font-size: 3em; margin-bottom: 0.2em; }
+  h2 { font-size: 1.4em; opacity: 0.7; margin-bottom: 1.5em; font-weight: normal; }
+  h1 .emoji { font-size: 1.1em; }
+
+  /* Buttons */
+  .btn {
+    padding: 14px 36px; margin: 6px;
+    font-size: 1.1em; border: none; border-radius: 8px;
+    cursor: pointer; font-weight: bold;
+    transition: transform 0.1s, background 0.2s;
+    color: #fff;
+  }
+  .btn:hover { transform: scale(1.05); }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: #2563eb; }
+  .btn-primary:hover { background: #3b82f6; }
+  .btn-secondary { background: #4b5563; }
+  .btn-secondary:hover { background: #6b7280; }
+  .btn-success { background: #16a34a; }
+  .btn-success:hover { background: #22c55e; }
+
+  /* Code display */
+  .code-display {
+    font-size: 4em; font-weight: bold; letter-spacing: 0.15em;
+    background: #1e3a5f; padding: 20px 40px; border-radius: 12px;
+    margin: 20px 0; user-select: all; cursor: pointer;
+    border: 2px solid #3b82f6;
+    text-align: center;
+  }
+  .code-display:active { transform: scale(0.98); }
+
+  /* Input field */
+  .code-input {
+    font-size: 2em; letter-spacing: 0.1em;
+    text-align: center; text-transform: uppercase;
+    padding: 12px 24px; border-radius: 8px;
+    border: 2px solid #3b82f6; background: #1e3a5f;
+    color: #fff; width: 260px; margin: 10px;
+    outline: none;
+  }
+  .code-input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(59,130,246,0.3); }
+
+  /* Info text */
+  .info { opacity: 0.6; margin: 8px 0; font-size: 0.95em; text-align: center; max-width: 500px; }
+
+  /* Controls info */
+  .controls {
+    display: flex; gap: 30px; margin: 20px 0; flex-wrap: wrap; justify-content: center;
+  }
+  .control-group {
+    background: rgba(255,255,255,0.05); border-radius: 10px;
+    padding: 14px 20px; text-align: center; min-width: 180px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .control-group .label { font-weight: bold; margin-bottom: 6px; font-size: 1.1em; }
+  .control-group .keys { opacity: 0.7; font-size: 0.9em; line-height: 1.6; }
+  kbd {
+    background: #374151; padding: 2px 7px; border-radius: 4px;
+    font-family: monospace; font-size: 0.9em;
+    border: 1px solid #4b5563;
+  }
+
+  /* Waiting animation */
+  .waiting { font-size: 1.2em; margin: 15px 0; }
+  .waiting .dots::after {
+    content: '';
+    animation: dots 1.5s infinite;
+  }
+  @keyframes dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+  }
+
+  /* HUD */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 10px 20px;
+    background: rgba(0,0,0,0.7);
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 50; pointer-events: none;
+  }
+  #hud > * { pointer-events: auto; }
+
+  .hud-item { display: flex; align-items: center; gap: 8px; }
+  .hud-label { opacity: 0.6; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Damage bar */
+  .bar-container {
+    width: 200px; height: 18px;
+    background: #1f2937; border-radius: 9px;
+    overflow: hidden; border: 1px solid #374151;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 8px;
+    transition: width 0.2s, background 0.3s;
+  }
+
+  /* Timer */
+  #timer { font-size: 1.3em; font-weight: bold; font-variant-numeric: tabular-nums; color: #67e8f9; }
+
+  /* Player count */
+  .player-dots { display: flex; gap: 6px; }
+  .player-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #374151; border: 2px solid #4b5563;
+    transition: background 0.3s, border-color 0.3s;
+  }
+  .player-dot.active { background: #22c55e; border-color: #4ade80; }
+
+  /* Result screen */
+  #result-title { font-size: 3em; margin-bottom: 0.3em; }
+  #result-sub { font-size: 1.3em; opacity: 0.8; margin-bottom: 0.5em; }
+
+  /* Connection status */
+  #conn-status {
+    position: fixed; bottom: 10px; right: 10px;
+    padding: 4px 12px; border-radius: 4px;
+    font-size: 0.8em; z-index: 50;
+    background: rgba(0,0,0,0.7);
+  }
+  .status-connected { color: #4ade80; }
+  .status-disconnected { color: #f87171; }
+  .status-connecting { color: #fbbf24; }
+
+  /* Error message */
+  .error-msg {
+    color: #f87171; margin: 10px 0; font-size: 1em;
+  }
+
+  .separator {
+    width: 2px; height: 40px;
+    background: rgba(255,255,255,0.1);
+    margin: 0 10px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Canvas -->
+<canvas id="game-canvas"></canvas>
+
+<!-- HUD (visible during game) -->
+<div id="hud" style="display:none;">
+  <div class="hud-item">
+    <span class="hud-label">Integridade:</span>
+    <div class="bar-container">
+      <div class="bar-fill" id="damage-bar" style="width:100%; background:#22c55e;"></div>
+    </div>
+    <span id="damage-text">100%</span>
+  </div>
+  <div class="separator"></div>
+  <div class="hud-item">
+    <span class="hud-label">Jogadores:</span>
+    <div class="player-dots" id="player-dots">
+      <div class="player-dot"></div>
+      <div class="player-dot"></div>
+    </div>
+  </div>
+  <div class="separator"></div>
+  <div class="hud-item">
+    <span id="timer">00:00</span>
+  </div>
+</div>
+
+<!-- Connection status -->
+<div id="conn-status" class="status-connecting">Conectando...</div>
+
+<!-- START SCREEN -->
+<div class="overlay" id="screen-start">
+  <h1><span class="emoji">ðŸ›‹ï¸</span> Mover Madness 3D</h1>
+  <h2>ProtÃ³tipo de FÃ­sica Cooperativa</h2>
+  <p class="info">VocÃª e seu amigo sÃ£o uma equipe de mudanÃ§a incompetente.<br>
+  Carreguem o sofÃ¡ do quarto atÃ© a sala sem estragar o mÃ³vel!</p>
+  <div class="controls">
+    <div class="control-group">
+      <div class="label" style="color:#4fc3f7;">ðŸŸ¦ Jogador 1</div>
+      <div class="keys">
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Mover<br>
+        <kbd>G</kbd> Agarrar
+      </div>
+    </div>
+    <div class="control-group">
+      <div class="label" style="color:#ef5350;">ðŸŸ¥ Jogador 2</div>
+      <div class="keys">
+        <kbd>â†‘</kbd><kbd>â†</kbd><kbd>â†“</kbd><kbd>â†’</kbd> Mover<br>
+        <kbd>Enter</kbd> Agarrar
+      </div>
+    </div>
+  </div>
+  <button class="btn btn-primary" id="btn-create" style="font-size:1.2em; padding:16px 48px;">
+    ðŸ  Criar Sala
+  </button>
+  <p class="info" style="margin-top:10px;">ou entre com um cÃ³digo:</p>
+  <div>
+    <input class="code-input" id="input-code" placeholder="AB3X" maxlength="4">
+    <button class="btn btn-secondary" id="btn-join">Entrar</button>
+  </div>
+  <div id="start-error" class="error-msg" style="display:none;"></div>
+</div>
+
+<!-- HOST SCREEN (show room code) -->
+<div class="overlay hidden" id="screen-host">
+  <h1>ðŸ“‹ CÃ³digo da Sala</h1>
+  <p class="info">Compartilhe este cÃ³digo com seu amigo:</p>
+  <div class="code-display" id="display-code" title="Clique para copiar"></div>
+  <p class="info">Aguardando segundo jogador...</p>
+  <div class="waiting">Conectando<span class="dots"></span></div>
+  <button class="btn btn-secondary" id="btn-cancel-host">Cancelar</button>
+</div>
+
+<!-- RESULT SCREEN -->
+<div class="overlay hidden" id="screen-result">
+  <div id="result-title"></div>
+  <div id="result-sub"></div>
+  <button class="btn btn-success" id="btn-restart" style="font-size:1.2em; padding:14px 40px;">
+    ðŸ”„ Jogar Novamente
+  </button>
+  <button class="btn btn-secondary" id="btn-lobby" style="margin-top:8px;">
+    Voltar ao Menu
+  </button>
+</div>
+
+<!-- Game script -->
+<script type="importmap">
+{
+  "imports": {
+    "	hree": "https://esm.sh/three@0.160.0"
+  }
+}
+</script>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>

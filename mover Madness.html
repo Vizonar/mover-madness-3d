@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mover Madness - Protótipo de Física Cooperativa</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a2e;
+  color: #eee;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+#hud {
+  background: rgba(0,0,0,0.8);
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  z-index: 10;
+  flex-shrink: 0;
+}
+#hud > div { display: flex; align-items: center; gap: 8px; }
+.damage-bar-container {
+  width: 220px; height: 22px;
+  background: #333; border-radius: 11px;
+  overflow: hidden; border: 2px solid #555;
+}
+.damage-bar {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  transition: width 0.2s, background 0.2s;
+  border-radius: 9px;
+}
+.damage-bar.warn { background: linear-gradient(90deg, #FF9800, #FFC107); }
+.damage-bar.critical { background: linear-gradient(90deg, #f44336, #FF5722); }
+#timer { font-size: 1.4em; font-weight: bold; font-variant-numeric: tabular-nums; color: #0ff; }
+#player-info { font-size: 0.85em; opacity: 0.8; }
+#game-canvas { flex: 1; display: block; }
+#overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  z-index: 100;
+}
+#overlay.hidden { display: none; }
+#overlay h1 { font-size: 2.8em; margin-bottom: 10px; }
+#overlay h2 { font-size: 1.6em; margin-bottom: 20px; opacity: 0.8; }
+#overlay p { font-size: 1.05em; margin: 4px 0; line-height: 1.5; max-width: 700px; text-align: center; }
+.btn {
+  margin-top: 24px; padding: 14px 40px;
+  font-size: 1.2em; border: none; border-radius: 8px;
+  cursor: pointer; font-weight: bold;
+  background: #0f3460; color: #fff;
+  transition: background 0.2s;
+}
+.btn:hover { background: #165a8a; }
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; max-width: 800px; margin: 16px 0;
+}
+.control-card {
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px; padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.control-card .p-label { font-weight: bold; margin-bottom: 4px; font-size: 1.05em; }
+.control-card .keys { font-size: 0.9em; opacity: 0.8; }
+.kbd {
+  display: inline-block; background: #333; padding: 1px 6px;
+  border-radius: 4px; font-family: monospace; font-size: 0.85em;
+  border: 1px solid #555;
+}
+#result-title { font-size: 3em; margin-bottom: 10px; }
+#result-sub { font-size: 1.3em; opacity: 0.85; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div>
+    <span style="font-weight:bold;">MOBILIDADE:</span>
+    <div class="damage-bar-container">
+      <div class="damage-bar" id="damage-bar"></div>
+    </div>
+    <span id="damage-text">100%</span>
+  </div>
+  <div id="player-info"></div>
+  <div id="timer">00:00.0</div>
+</div>
+
+<canvas id="game-canvas"></canvas>
+
+<div id="overlay">
+  <h1>🛋️ Mover Madness</h1>
+  <h2>Protótipo de Física Cooperativa</h2>
+  <p>Você e seus amigos são uma equipe de mudança incompetente. Carreguem o sofá do <b>quarto</b> até a <b>sala</b> sem estragar o móvel!</p>
+
+  <div class="controls-grid">
+    <div class="control-card">
+      <div class="p-label" style="color:#4fc3f7;">🟦 Jogador 1</div>
+      <div class="keys"><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span> mover</div>
+      <div class="keys"><span class="kbd">G</span> agarrar / soltar</div>
+    </div>
+    <div class="control-card">
+      <div class="p-label" style="color:#ef5350;">🟥 Jogador 2</div>
+      <div class="keys"><span class="kbd">↑</span><span class="kbd">←</span><span class="kbd">↓</span><span class="kbd">→</span> mover</div>
+      <div class="keys"><span class="kbd">Enter</span> agarrar / soltar</div>
+    </div>
+    <div class="control-card">
+      <div class="p-label" style="color:#66bb6a;">🟩 Jogador 3</div>
+      <div class="keys"><span class="kbd">I</span><span class="kbd">J</span><span class="kbd">K</span><span class="kbd">L</span> mover</div>
+      <div class="keys"><span class="kbd">Numpad 0</span> agarrar / soltar</div>
+    </div>
+    <div class="control-card">
+      <div class="p-label" style="color:#ffb74d;">🟨 Jogador 4</div>
+      <div class="keys"><span class="kbd">Numpad 8,4,5,6</span> mover</div>
+      <div class="keys"><span class="kbd">Numpad Enter</span> agarrar / soltar</div>
+    </div>
+  </div>
+
+  <p style="margin-top:10px; opacity:0.6;">Cada jogador pode se agarrar em pontos diferentes do sofá. Coordenem-se ou puxem todos pro mesmo lado!</p>
+
+  <button class="btn" id="btn-start">▶ Começar (1 Jogador)</button>
+  <div style="margin-top:10px; display:flex; gap:8px;">
+    <button class="btn" style="padding:8px 20px; font-size:0.9em; background:#2a5a3a;" data-players="2">2 Jogadores</button>
+    <button class="btn" style="padding:8px 20px; font-size:0.9em; background:#5a3a2a;" data-players="3">3 Jogadores</button>
+    <button class="btn" style="padding:8px 20px; font-size:0.9em; background:#5a5a2a;" data-players="4">4 Jogadores</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// MOVER MADNESS - Protótipo de Física Cooperativa
+// ============================================================
+
+const { Engine, World, Bodies, Body, Events, Composite, Constraint, Vector, Detector } = Matter;
+
+// --- Canvas setup ---
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const hud = document.getElementById('hud');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight - hud.offsetHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// --- Audio context for simple beeps ---
+let audioCtx = null;
+function beep(freq, duration, vol=0.15) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  gain.gain.value = vol;
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + duration);
+}
+function beepGrab() { beep(600, 0.1, 0.1); }
+function beepRelease() { beep(300, 0.1, 0.1); }
+function beepDamage() { beep(120, 0.3, 0.2); }
+function beepWin() { beep(523, 0.15, 0.15); setTimeout(()=>beep(659,0.15,0.15),150); setTimeout(()=>beep(784,0.3,0.15),300); }
+function beepLose() { beep(200, 0.4, 0.2); setTimeout(()=>beep(150, 0.5, 0.2), 300); }
+
+// ============================================================
+// CONFIGURAÇÕES DE FÍSICA — TUDO CONFIGURÁVEL AQUI
+// ============================================================
+const PHYSICS = {
+  // Jogador
+  playerSpeed: 3.5,
+  playerRadius: 18,
+  playerMass: 2,
+  playerFrictionAir: 0.12,
+  grabDistance: 45,
+  grabStrength: 0.8,       // força da joint (0-1)
+  grabStiffness: 0.3,      // rigidez da joint
+
+  // Sofá
+  sofaMass: 15,
+  sofaFriction: 0.6,
+  sofaSlipperiness: 0.05,   // baixa = mais "escorregadio"
+  sofaRestitution: 0.05,    // quase sem rebote
+  sofaMaxDamage: 100,
+  damagePerImpact: 25,       // dano por colisão forte
+  damageThreshold: 2.0,     // velocidade mínima pra causar dano (m/s)
+
+  // Paredes
+  wallThickness: 24,
+
+  // Zona de entrega
+  zonePadding: 30,
+};
+
+// --- Key definitions per player ---
+const PLAYER_CONTROLS = [
+  { name: 'Jogador 1', color: '#4fc3f7', colorBg: 'rgba(79,195,247,0.3)',
+    left: 'KeyA', right: 'KeyD', up: 'KeyW', down: 'KeyS', grab: 'KeyG' },
+  { name: 'Jogador 2', color: '#ef5350', colorBg: 'rgba(239,83,80,0.3)',
+    left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown', grab: 'Enter' },
+  { name: 'Jogador 3', color: '#66bb6a', colorBg: 'rgba(102,187,106,0.3)',
+    left: 'KeyJ', right: 'KeyL', up: 'KeyI', down: 'KeyK', grab: 'Numpad0' },
+  { name: 'Jogador 4', color: '#ffb74d', colorBg: 'rgba(255,183,77,0.3)',
+    left: 'NumpadLeft', right: 'NumpadRight', up: 'NumpadUp', down: 'NumpadDown', grab: 'NumpadDecimal' },
+];
+
+// ============================================================
+// GAME STATE
+// ============================================================
+let game = {
+  engine: null,
+  players: [],
+  grabConstraints: [],
+  sofa: null,
+  furniture: [],
+  walls: [],
+  keys: {},
+  activePlayers: 1,
+  damage: 100,
+  running: false,
+  started: false,
+  gameOver: false,
+  startTime: 0,
+  camera: { x: 0, y: 0, zoom: 1 },
+  lastFrame: 0,
+  grabCooldowns: [0, 0, 0, 0],
+};
+
+// ============================================================
+// HOUSE LAYOUT (world coordinates)
+// ============================================================
+const HOUSE = {
+  width: 1400,
+  height: 900,
+  wall: PHYSICS.wallThickness,
+  // Rooms
+  bedroom: { x: 50, y: 50, w: 500, h: 400 },   // top-left
+  livingRoom: { x: 850, y: 50, w: 500, h: 400 }, // top-right
+  hallway: { x: 550, y: 50, w: 300, h: 400 },     // center
+  bottomRoom: { x: 50, y: 500, w: 1300, h: 350 }, // bottom area
+  // Delivery zone
+  deliveryZone: { x: 1000, y: 120, w: 300, h: 260 },
+  // Start zone
+  startZone: { x: 180, y: 150, w: 300, h: 260 },
+};
+
+// ============================================================
+// BUILD HOUSE — clean implementation with proper door gaps
+// ============================================================
+function buildHouse() {
+  const wt = HOUSE.wall;
+  const w = HOUSE.width;
+  const h = HOUSE.height;
+  const walls = [];
+
+  function addWall(x, y, rw, rh) {
+    const b = Bodies.rectangle(x, y, rw, rh, {
+      isStatic: true,
+      friction: 0.8,
+      render: { fillStyle: '#555' },
+      label: 'wall',
+    });
+    walls.push(b);
+  }
+
+  // ===== OUTER WALLS (full boundary) =====
+  addWall(w / 2, wt / 2, w, wt);                          // top
+  addWall(w / 2, h - wt / 2, w, wt);                      // bottom
+  addWall(wt / 2, h / 2, wt, h);                          // left
+  addWall(w - wt / 2, h / 2, wt, h);                      // right
+
+  // ===== INTERNAL HORIZONTAL DIVIDER (top rooms → bottom room) =====
+  // This wall runs from left edge to right edge at y=HOUSE.bottomRoom.y
+  // with TWO gaps for doors.
+  const dividerY = HOUSE.bottomRoom.y;
+  // Gap positions (center of doorways):
+  const door1cx = HOUSE.bedroom.x + HOUSE.bedroom.w / 2;  // ~300
+  const door2cx = HOUSE.bedroom.x + HOUSE.bedroom.w + HOUSE.hallway.w / 2;  // ~700
+  const doorGapW = 70;  // half-width of each door gap
+
+  // Left section: left wall → door1
+  addWall(door1cx - (doorGapW + wt / 2) / 2, dividerY, doorGapW + wt, wt);
+  // Between door1 and door2:
+  const midStart = door1cx + doorGapW + wt / 2;
+  const midEnd = door2cx - doorGapW - wt / 2;
+  if (midEnd - midStart > 0) {
+    addWall((midStart + midEnd) / 2, dividerY, midEnd - midStart, wt);
+  }
+  // Right section: door2 → right wall
+  const rightStart = door2cx + doorGapW + wt / 2;
+  addWall((rightStart + w - wt / 2) / 2, dividerY, (w - wt / 2) - rightStart + wt / 2, wt);
+
+  // ===== INTERNAL VERTICAL WALLS (between left rooms) =====
+  // Bedroom-right wall (separates bedroom ↔ hallway) with door gap
+  const vert1x = HOUSE.bedroom.x + HOUSE.bedroom.w;
+  const doorTopY = 160;  // top of door gap
+  const doorBotY = 280;  // bottom of door gap
+  // Top segment
+  addWall(vert1x, wt + (doorTopY - wt) / 2, wt, doorTopY - wt);
+  // Bottom segment
+  addWall(vert1x, doorBotY + (dividerY - doorBotY - wt) / 2, wt, dividerY - doorBotY - wt);
+
+  // Hallway-right wall (separates hallway ↔ living room) with door gap
+  const vert2x = HOUSE.bedroom.x + HOUSE.bedroom.w + HOUSE.hallway.w;
+  // Top segment
+  addWall(vert2x, wt + (doorTopY - wt) / 2, wt, doorTopY - wt);
+  // Bottom segment
+  addWall(vert2x, doorBotY + (dividerY - doorBotY - wt) / 2, wt, dividerY - doorBotY - wt);
+
+  return walls;
+}
+
+// ============================================================
+// CREATE SOFA
+// ============================================================
+function createSofa(x, y) {
+  const sofa = Bodies.rectangle(x, y, 200, 80, {
+    mass: PHYSICS.sofaMass,
+    friction: PHYSICS.sofaFriction,
+    frictionAir: 0.02,
+    restitution: PHYSICS.sofaRestitution,
+    label: 'sofa',
+  });
+  sofa.isFragile = false;
+  return sofa;
+}
+
+// ============================================================
+// CREATE FURNITURE OBSTACLES
+// ============================================================
+function createFurniture() {
+  const items = [];
+
+  // Armchair in living room
+  const chair = Bodies.rectangle(1150, 350, 80, 70, {
+    mass: 5,
+    friction: 0.5,
+    frictionAir: 0.03,
+    restitution: 0.1,
+    label: 'furniture',
+  });
+  chair.furnitureType = 'chair';
+  chair.color = '#a0522d';
+  items.push(chair);
+
+  // Table in bottom room
+  const table = Bodies.rectangle(700, 700, 180, 70, {
+    mass: 8,
+    friction: 0.5,
+    frictionAir: 0.02,
+    restitution: 0.05,
+    label: 'furniture',
+  });
+  table.furnitureType = 'table';
+  table.color = '#8B4513';
+  items.push(table);
+
+  // Small stool obstacle in hallway
+  const stool = Bodies.rectangle(700, 250, 50, 40, {
+    mass: 2,
+    friction: 0.4,
+    frictionAir: 0.04,
+    restitution: 0.15,
+    label: 'furniture',
+  });
+  stool.furnitureType = 'stool';
+  stool.color = '#CD853F';
+  items.push(stool);
+
+  return items;
+}
+
+// ============================================================
+// CREATE PLAYER
+// ============================================================
+function createPlayer(index, x, y) {
+  const ctrl = PLAYER_CONTROLS[index];
+  const body = Bodies.circle(x, y, PHYSICS.playerRadius, {
+    mass: PHYSICS.playerMass,
+    friction: 0.5,
+    frictionAir: PHYSICS.playerFrictionAir,
+    restitution: 0.0,
+    label: 'player',
+    renderType: index,
+  });
+  body.grabbed = false;
+  body.grabbedFurniture = null;
+  body.ctrl = ctrl;
+  return body;
+}
+
+// ============================================================
+// RENDERING
+// ============================================================
+function render() {
+  const W = canvas.width;
+  const H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Camera follow sofa
+  if (game.sofa) {
+    const targetZoom = 0.7;
+    game.camera.zoom = targetZoom;
+    const targetX = -game.sofa.position.x * targetZoom + W / 2;
+    const targetY = -game.sofa.position.y * targetZoom + H / 2;
+    game.camera.x += (targetX - game.camera.x) * 0.05;
+    game.camera.y += (targetY - game.camera.y) * 0.05;
+  }
+
+  ctx.save();
+  ctx.scale(game.camera.zoom, game.camera.zoom);
+  ctx.translate(game.camera.x, game.camera.y);
+
+  // Floor
+  ctx.fillStyle = '#2a2a3a';
+  ctx.fillRect(0, 0, HOUSE.width, HOUSE.height);
+
+  // Floor tiles pattern
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx < HOUSE.width; gx += 50) {
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, HOUSE.height); ctx.stroke();
+  }
+  for (let gy = 0; gy < HOUSE.height; gy += 50) {
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(HOUSE.width, gy); ctx.stroke();
+  }
+
+  // Room labels
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillText('QUARTO', HOUSE.bedroom.x + HOUSE.bedroom.w/2, HOUSE.bedroom.y + 25);
+  ctx.fillText('CORREDOR', HOUSE.hallway.x + HOUSE.hallway.w/2, HOUSE.bedroom.y + 25);
+  ctx.fillText('SALA', HOUSE.livingRoom.x + HOUSE.livingRoom.w/2, HOUSE.bedroom.y + 25);
+  ctx.fillText('COZINHA', (HOUSE.wall + 100), HOUSE.bottomRoom.y + 30);
+
+  // Start zone
+  ctx.fillStyle = 'rgba(100,200,255,0.08)';
+  ctx.strokeStyle = 'rgba(100,200,255,0.3)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 4]);
+  ctx.strokeRect(HOUSE.startZone.x, HOUSE.startZone.y, HOUSE.startZone.w, HOUSE.startZone.h);
+  ctx.setLineDash([]);
+  ctx.fillText('📦 INÍCIO', HOUSE.startZone.x + HOUSE.startZone.w/2, HOUSE.startZone.y + HOUSE.startZone.h/2 + 5);
+
+  // Delivery zone
+  ctx.fillStyle = 'rgba(0,255,100,0.08)';
+  ctx.strokeStyle = 'rgba(0,255,100,0.35)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 4]);
+  ctx.strokeRect(HOUSE.deliveryZone.x, HOUSE.deliveryZone.y, HOUSE.deliveryZone.w, HOUSE.deliveryZone.h);
+  ctx.setLineDash([]);
+  ctx.fillText('🏠 ENTREGA', HOUSE.deliveryZone.x + HOUSE.deliveryZone.w/2, HOUSE.deliveryZone.y + HOUSE.deliveryZone.h/2 + 5);
+
+  // Walls
+  for (const wall of game.walls) {
+    ctx.fillStyle = '#444';
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    const pos = wall.position;
+    const hw = wall.bounds.max.x - pos.x;
+    const hh = wall.bounds.max.y - pos.y;
+    ctx.fillRect(pos.x - hw, pos.y - hh, hw*2, hh*2);
+    ctx.strokeRect(pos.x - hw, pos.y - hh, hw*2, hh*2);
+  }
+
+  // Furniture obstacles
+  for (const f of game.furniture) {
+    ctx.save();
+    ctx.translate(f.position.x, f.position.y);
+    ctx.rotate(f.angle);
+    ctx.fillStyle = f.color || '#8B4513';
+    ctx.fillRect(-f.bounds.max.x + f.position.x, -f.bounds.max.y + f.position.y,
+                 (f.bounds.max.x - f.bounds.min.x), (f.bounds.max.y - f.bounds.min.y));
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-f.bounds.max.x + f.position.x, -f.bounds.max.y + f.position.y,
+                   (f.bounds.max.x - f.bounds.min.x), (f.bounds.max.y - f.bounds.min.y));
+    ctx.restore();
+  }
+
+  // Sofa
+  if (game.sofa) {
+    ctx.save();
+    ctx.translate(game.sofa.position.x, game.sofa.position.y);
+    ctx.rotate(game.sofa.angle);
+    const sw = game.sofa.bounds.max.x - game.sofa.position.x;
+    const sh = game.sofa.bounds.max.y - game.sofa.position.y;
+
+    // Sofa body color based on damage
+    const dmgRatio = game.damage / PHYSICS.sofaMaxDamage;
+    let sofaColor;
+    if (dmgRatio > 0.6) sofaColor = '#8B6914';
+    else if (dmgRatio > 0.3) sofaColor = '#A0522D';
+    else if (dmgRatio > 0) sofaColor = '#CD3333';
+    else sofaColor = '#FF0000';
+
+    // Flash red on damage
+    if (game.sofa._flash > 0) {
+      game.sofa._flash--;
+      sofaColor = '#FF4444';
+    }
+
+    ctx.fillStyle = sofaColor;
+    ctx.fillRect(-sw, -sh, sw*2, sh*2);
+
+    // Sofa detail - backrest
+    ctx.fillStyle = dmgRatio > 0.3 ? '#6B4F12' : '#8B3A12';
+    ctx.fillRect(-sw, -sh, sw*2, sh*0.5);
+
+    // Arms
+    ctx.fillStyle = dmgRatio > 0.3 ? '#5B3F0A' : '#6B2A0A';
+    ctx.fillRect(-sw, -sh*1.5, sw*0.3, sh*3);
+    ctx.fillRect(sw*0.7, -sh*1.5, sw*0.3, sh*3);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-sw, -sh, sw*2, sh*2);
+
+    // Grip points (visible when grabbed)
+    for (const c of game.grabConstraints) {
+      if (c.bodyB === game.sofa) {
+        const p = c.pointB;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Grab constraints (visible lines)
+  ctx.lineWidth = 2;
+  for (const c of game.grabConstraints) {
+    if (c.bodyA && c.bodyB) {
+      const pA = c.bodyA.position;
+      const pB = c.bodyB.position;
+      const offset = c.pointA;
+      const p = { x: pB.x + (c.pointB.x - pB.x), y: pB.y + (c.pointB.y - pB.y) };
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(p.x, p.y);
+      const playerBody = c.bodyA;
+      if (playerBody.renderType !== undefined) {
+        ctx.strokeStyle = PLAYER_CONTROLS[playerBody.renderType].color;
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Players
+  for (const p of game.players) {
+    const ctrl = p.ctrl;
+    const pos = p.position;
+
+    // Player circle
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, PHYSICS.playerRadius, 0, Math.PI * 2);
+    ctx.fillStyle = ctrl.colorBg;
+    ctx.fill();
+    ctx.strokeStyle = ctrl.color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Direction indicator
+    const angle = Math.atan2(p.velocity.y, p.velocity.x);
+    if (p.velocity.length > 0.3) {
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(pos.x + Math.cos(angle) * 25, pos.y + Math.sin(angle) * 25);
+      ctx.strokeStyle = ctrl.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Player number
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.renderType + 1, pos.x, pos.y);
+  }
+
+  // Grab indicator: pulsing ring around player when close enough to grab sofa
+  for (const p of game.players) {
+    if (p.grabbed) continue;
+    if (game.sofa) {
+      const dist = Vector.magnitude(Vector.sub(p.position, game.sofa.position));
+      if (dist <= PHYSICS.grabDistance) {
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 150);
+        ctx.beginPath();
+        ctx.arc(p.position.x, p.position.y, PHYSICS.playerRadius + 6 + pulse * 4, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,255,255,${0.3 + pulse * 0.3})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // "AGARRAR" label
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = `rgba(255,255,255,${0.5 + pulse * 0.5})`;
+        ctx.fillText('AGARRAR', p.position.x, p.position.y - PHYSICS.playerRadius - 14);
+      }
+    }
+  }
+
+  ctx.restore();
+
+  // --- HUD overlay: minimize/maximize label ---
+  if (game.gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = game.damage > 0 ? '#4CAF50' : '#f44336';
+    ctx.fillText(game.damage > 0 ? 'SUCESSO!' : 'MÓVEL QUEBRADO!', W/2, H/2 - 20);
+    ctx.font = '24px sans-serif';
+    ctx.fillStyle = '#ccc';
+    ctx.fillText(`Tempo: ${formatTime(Date.now() - game.startTime)}`, W/2, H/2 + 30);
+    ctx.font = '18px sans-serif';
+    ctx.fillText('Pressione R para recomeçar', W/2, H/2 + 70);
+  }
+}
+
+// ============================================================
+// INPUT HANDLING
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  game.keys[e.code] = true;
+
+  // R to restart
+  if (e.code === 'KeyR' && game.gameOver) {
+    initGame(game.activePlayers);
+    return;
+  }
+
+  // Grab/release
+  if (e.code === 'KeyR' && game.started && !game.gameOver) return;
+
+  for (let i = 0; i < game.activePlayers; i++) {
+    const ctrl = PLAYER_CONTROLS[i];
+    if (e.code === ctrl.grab && game.grabCooldowns[i] <= 0) {
+      e.preventDefault();
+      toggleGrab(i);
+      game.grabCooldowns[i] = 8; // cooldown frames
+    }
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  game.keys[e.code] = false;
+});
+
+function toggleGrab(playerIndex) {
+  const p = game.players[playerIndex];
+  if (!p || !game.sofa) return;
+
+  const dist = Vector.magnitude(Vector.sub(p.position, game.sofa.position));
+
+  if (p.grabbed) {
+    // Release
+    releaseGrab(playerIndex);
+    beepRelease();
+  } else if (dist < PHYSICS.grabDistance) {
+    // Grab
+    grabPlayer(playerIndex);
+    beepGrab();
+  }
+}
+
+function grabPlayer(playerIndex) {
+  const p = game.players[playerIndex];
+  if (p.grabbed) return;
+
+  // Find best grab point on sofa perimeter (closest to player)
+  const sofaAngle = game.sofa.angle;
+  const dir = Vector.normalise(Vector.sub(p.position, game.sofa.position));
+  const rotatedDir = {
+    x: dir.x * Math.cos(-sofaAngle) - dir.y * Math.sin(-sofaAngle),
+    y: dir.x * Math.sin(-sofaAngle) + dir.y * Math.cos(-sofaAngle),
+  };
+
+  // Grab point on sofa edge
+  const pointB = {
+    x: game.sofa.position.x + rotatedDir.x * 90,
+    y: game.sofa.position.y + rotatedDir.y * 35,
+  };
+
+  // Clamp to sofa bounds
+  const clampedPointB = {
+    x: Math.max(game.sofa.position.x - 95, Math.min(game.sofa.position.x + 95, pointB.x)),
+    y: Math.max(game.sofa.position.y - 35, Math.min(game.sofa.position.y + 35, pointB.y)),
+  };
+
+  const constraint = Constraint.create({
+    bodyA: p,
+    bodyB: game.sofa,
+    pointA: { x: 0, y: 0 }, // center of player
+    pointB: clampedPointB,
+    stiffness: PHYSICS.grabStiffness,
+    length: 0,
+    damping: 0.1,
+    label: 'grab',
+  });
+
+  World.add(game.engine.world, constraint);
+  game.grabConstraints.push(constraint);
+  p.grabbed = true;
+  p.grabbedFurniture = game.sofa;
+}
+
+function releaseGrab(playerIndex) {
+  const p = game.players[playerIndex];
+  if (!p.grabbed) return;
+
+  // Remove constraint
+  for (let i = game.grabConstraints.length - 1; i >= 0; i--) {
+    if (game.grabConstraints[i].bodyA === p && game.grabConstraints[i].label === 'grab') {
+      World.remove(game.engine.world, game.grabConstraints[i]);
+      game.grabConstraints.splice(i, 1);
+      break;
+    }
+  }
+
+  p.grabbed = false;
+  p.grabbedFurniture = null;
+}
+
+// ============================================================
+// PLAYER MOVEMENT
+// ============================================================
+function updatePlayerMovement(dt) {
+  for (let i = 0; i < game.activePlayers; i++) {
+    const p = game.players[i];
+    if (!p) continue;
+
+    const ctrl = PLAYER_CONTROLS[i];
+    let dx = 0, dy = 0;
+
+    if (game.keys[ctrl.left]) dx -= 1;
+    if (game.keys[ctrl.right]) dx += 1;
+    if (game.keys[ctrl.up]) dy -= 1;
+    if (game.keys[ctrl.down]) dy += 1;
+
+    if (dx !== 0 || dy !== 0) {
+      const len = Math.sqrt(dx*dx + dy*dy);
+      dx /= len; dy /= len;
+
+      // Set velocity directly for responsive movement
+      const maxSpeed = PHYSICS.playerSpeed;
+      const v = p.velocity;
+      const speed = Math.sqrt(v.x*v.x + v.y*v.y);
+      if (speed < maxSpeed * 1.5) {
+        Body.setVelocity(p, {
+          x: v.x + dx * 2.5,
+          y: v.y + dy * 2.5,
+        });
+      }
+      // Clamp max velocity
+      const newSpeed = Math.sqrt(p.velocity.x*p.velocity.x + p.velocity.y*p.velocity.y);
+      if (newSpeed > maxSpeed * 1.5) {
+        const ratio = (maxSpeed * 1.5) / newSpeed;
+        Body.setVelocity(p, {
+          x: p.velocity.x * ratio,
+          y: p.velocity.y * ratio,
+        });
+      }
+    }
+  }
+}
+
+// ============================================================
+// COLLISION / DAMAGE
+// ============================================================
+Events.on(game.engine, 'collisionStart', (event) => {
+  if (game.gameOver) return;
+
+  for (const pair of event.pairs) {
+    const { bodyA, bodyB } = pair;
+
+    // Check if sofa hit something hard
+    const other = bodyA.label === 'sofa' ? bodyB : bodyB.label === 'sofa' ? bodyA : null;
+    if (!other) continue;
+
+    // Calculate impact force
+    const relativeVelocity = Vector.magnitude(
+      Vector.sub(bodyA.velocity, bodyB.velocity)
+    );
+
+    if (relativeVelocity > PHYSICS.damageThreshold && other.label === 'wall') {
+      const damageAmount = PHYSICS.damagePerImpact * Math.min(relativeVelocity / 5, 2);
+      game.damage = Math.max(0, game.damage - damageAmount);
+
+      beepDamage();
+
+      // Visual flash
+      if (game.sofa) {
+        game.sofa._flash = 10;
+      }
+
+      if (game.damage <= 0) {
+        endGame(false);
+      }
+    }
+
+    // Also check furniture collisions
+    if (other.label === 'furniture' && relativeVelocity > PHYSICS.damageThreshold * 0.8) {
+      const damageAmount = PHYSICS.damagePerImpact * 0.7 * Math.min(relativeVelocity / 5, 2);
+      game.damage = Math.max(0, game.damage - damageAmount);
+      beepDamage();
+    }
+  }
+});
+
+// ============================================================
+// WIN CONDITION CHECK
+// ============================================================
+function checkWinCondition() {
+  if (!game.sofa || game.gameOver) return;
+
+  const dz = HOUSE.deliveryZone;
+  const sx = game.sofa.position.x;
+  const sy = game.sofa.position.y;
+  const sw = 200;
+  const sh = 80;
+
+  // Check if sofa is mostly within delivery zone
+  const inZone = (
+    sx - sw/2 > dz.x &&
+    sx + sw/2 < dz.x + dz.w &&
+    sy - sh/2 > dz.y &&
+    sy + sh/2 < dz.y + dz.h
+  );
+
+  // Also check speed is low
+  const speed = Vector.magnitude(game.sofa.velocity);
+
+  if (inZone && speed < 0.5) {
+    endGame(true);
+  }
+}
+
+// ============================================================
+// GAME FLOW
+// ============================================================
+function endGame(won) {
+  game.gameOver = true;
+  game.running = false;
+
+  if (won) beepWin(); else beepLose();
+
+  // Show result on overlay
+  const overlay = document.getElementById('overlay');
+  overlay.classList.remove('hidden');
+  const title = document.getElementById('result-title');
+  const sub = document.getElementById('result-sub');
+
+  if (won) {
+    title.textContent = '🎉 Entrega Concluída!';
+    title.style.color = '#4CAF50';
+  } else {
+    title.textContent = '💥 Móvel Quebrado!';
+    title.style.color = '#f44336';
+  }
+  sub.textContent = `Tempo: ${formatTime(Date.now() - game.startTime)}`;
+
+  document.getElementById('btn-start').textContent = '🔄 Jogar Novamente';
+  document.getElementById('btn-start').onclick = () => {
+    initGame(game.activePlayers);
+  };
+}
+
+function formatTime(ms) {
+  const totalSec = ms / 1000;
+  const min = Math.floor(totalSec / 60);
+  const sec = Math.floor(totalSec % 60);
+  const dec = Math.floor((totalSec * 10) % 10);
+  return `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}.${dec}`;
+}
+
+// ============================================================
+// GAME INIT
+// ============================================================
+function initGame(numPlayers) {
+  // Clear
+  if (game.engine) {
+    World.clear(game.engine.world);
+    Engine.clear(game.engine);
+    if (game.engine.timeout) clearTimeout(game.engine.timeout);
+  }
+
+  game.engine = Engine.create({
+    gravity: { x: 0, y: 0 }, // Top-down, no gravity
+  });
+
+  game.walls = buildHouse();
+  World.add(game.engine.world, game.walls);
+
+  // Sofa - start in bedroom
+  game.sofa = createSofa(250, 200);
+  World.add(game.engine.world, game.sofa);
+
+  // Furniture obstacles
+  game.furniture = createFurniture();
+  World.add(game.engine.world, game.furniture);
+
+  // Players
+  game.players = [];
+  for (let i = 0; i < 4; i++) {
+    const positions = [
+      { x: 150, y: 160 },
+      { x: 150, y: 260 },
+      { x: 250, y: 120 },
+      { x: 250, y: 300 },
+    ];
+    const p = createPlayer(i, positions[i].x, positions[i].y);
+    game.players.push(p);
+    World.add(game.engine.world, p);
+  }
+
+  game.grabConstraints = [];
+  game.damage = PHYSICS.sofaMaxDamage;
+  game.running = true;
+  game.started = true;
+  game.gameOver = false;
+  game.startTime = Date.now();
+  game.activePlayers = numPlayers;
+  game.grabCooldowns = [0, 0, 0, 0];
+
+  // Hide overlay
+  document.getElementById('overlay').classList.add('hidden');
+
+  updateHUD();
+}
+
+// ============================================================
+// HUD UPDATE
+// ============================================================
+function updateHUD() {
+  const bar = document.getElementById('damage-bar');
+  const text = document.getElementById('damage-text');
+  const ratio = game.damage / PHYSICS.sofaMaxDamage;
+
+  bar.style.width = `${ratio * 100}%`;
+  text.textContent = `${Math.round(ratio * 100)}%`;
+
+  bar.className = 'damage-bar';
+  if (ratio > 0.6) bar.classList.add('warn');
+  if (ratio <= 0.3) bar.classList.add('critical');
+
+  // Timer
+  const timerEl = document.getElementById('timer');
+  if (game.started && !game.gameOver) {
+    timerEl.textContent = formatTime(Date.now() - game.startTime);
+  } else if (game.gameOver) {
+    timerEl.textContent = formatTime(Date.now() - game.startTime) + ' ✓';
+  }
+
+  // Player info
+  const pi = document.getElementById('player-info');
+  const pTexts = [];
+  for (let i = 0; i < game.activePlayers; i++) {
+    const ctrl = PLAYER_CONTROLS[i];
+    const p = game.players[i];
+    const status = p && p.grabbed ? '🔗' : '○';
+    pTexts.push(`<span style="color:${ctrl.color}">${status} ${i+1}</span>`);
+  }
+  pi.innerHTML = pTexts.join('  ');
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+function gameLoop() {
+  if (!game.started) {
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
+  if (game.running && !game.gameOver) {
+    // Update cooldowns
+    for (let i = 0; i < game.grabCooldowns.length; i++) {
+      if (game.grabCooldowns[i] > 0) game.grabCooldowns[i]--;
+    }
+
+    updatePlayerMovement(1/60);
+    Engine.update(game.engine, 1000 / 60);
+    checkWinCondition();
+    updateHUD();
+  }
+
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+// BUTTONS
+// ============================================================
+document.getElementById('btn-start').onclick = () => {
+  initGame(1);
+};
+
+document.querySelectorAll('[data-players]').forEach(btn => {
+  btn.onclick = () => {
+    initGame(parseInt(btn.dataset.players));
+  };
+});
+
+// ============================================================
+// START
+// ============================================================
+requestAnimationFrame(gameLoop);
+
+</script>
+</body>
+</html>

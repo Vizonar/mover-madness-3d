@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: mover-madness-3d
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: npx tsx server.ts
+    envVars:
+      - key: PORT
+        value: 2567
