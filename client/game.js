@@ -61,6 +61,9 @@ function connectToServer() {
   ws.onopen = function() {
     console.log('[Net] CONNECTED');
     updateConnStatus('connected', 'Conectado');
+    // Enter the TESTE room automatically
+    console.log('[Net] Entering room TESTE...');
+    ws.send(JSON.stringify({ type: 'join_room', code: 'TESTE' }));
   };
   ws.onclose = function() {
     console.log('[Net] Closed');

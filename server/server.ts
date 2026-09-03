@@ -602,8 +602,15 @@ async function main() {
 ║   MOVER MADNESS 3D - Server          ║
 ║   Port: ${CFG.port}
 ║   Open browser: http://localhost:${CFG.port}
+║   Room code: TESTE
 ╚══════════════════════════════════════╝
 `);
+
+    // Create a fixed test room automatically
+    const code = "TESTE";
+    const room = new Room(code);
+    rooms.set(code, room);
+    console.log("[Server] Fixed room created: TESTE");
   });
 }
 
