@@ -54,39 +54,55 @@ function connectToServer() {
   const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
 
+  let url;
   if (isLocal) {
-    ws = new WebSocket('ws://localhost:2568');
+    url = 'ws://localhost:2568';
   } else {
-    // Remote: connect through the tunnel to our server on 2568
-    // The tunnel (ngrok/localtunnel) forwards all traffic to localhost:2568
-    ws = new WebSocket(`${proto}://${hostname}`);
+    // Remote (Render): connect to same host
+    url = `${proto}://${hostname}`;
+  }
+
+  console.log('[Net] Connecting to:', url);
+  console.log('[Net] Hostname:', hostname);
+  console.log('[Net] Is local:', isLocal);
+  console.log('[Net] Protocol:', proto);
+
+  try {
+    ws = new WebSocket(url);
+    console.log('[Net] WebSocket object created');
+  } catch (e) {
+    console.error('[Net] Failed to create WebSocket:', e);
+    return;
   }
 
   ws.onopen = () => {
-    console.log("[Net] Connected to server");
+    console.log('[Net] WebSocket OPEN!');
     updateConnStatus('connected', 'Conectado');
   };
 
-  ws.onclose = () => {
-    console.log("[Net] Disconnected");
+  ws.onclose = (event) => {
+    console.log('[Net] WebSocket CLOSED:', event.code, event.reason);
     updateConnStatus('disconnected', 'Desconectado');
-    showScreen('start');
+    // Auto-retry
+    setTimeout(connectToServer, 3000);
   };
 
-  ws.onerror = () => {
-    console.error("[Net] Error");
-    updateConnStatus('disconnected', 'Erro de conexão');
+  ws.onerror = (err) => {
+    console.error('[Net] WebSocket ERROR');
+    updateConnStatus('disconnected', 'Erro');
   };
 
   ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-
-    // Check if it's a command (not state update)
-    if (data.type === 'room_created' || data.type === 'room_joined' || data.type === 'error') {
-      handleCommand(data);
-    } else {
-      // State update - update game
-      gameState = data;
+    console.log('[Net] Received:', event.data.substring(0, 100));
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'room_created' || data.type === 'room_joined' || data.type === 'error') {
+        handleCommand(data);
+      } else {
+        gameState = data;
+      }
+    } catch (e) {
+      console.error('[Net] Failed to parse message:', e);
     }
   };
 }
@@ -717,14 +733,22 @@ function onResize() {
 
 // Button handlers
 document.getElementById('btn-create').addEventListener('click', () => {
+  console.log('[Btn] Create room clicked');
   if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.log('[Btn] Not connected, state:', ws ? ws.readyState : 'null');
+    showStartError('Conectando ao servidor...');
     connectToServer();
-    setTimeout(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'create_room' }));
-      }
-    }, 500);
+    // Retry multiple times
+    for (let i = 0; i < 10; i++) {
+      setTimeout(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          console.log('[Btn] Connected! Sending create_room');
+          ws.send(JSON.stringify({ type: 'create_room' }));
+        }
+      }, 1000 * (i + 1));
+    }
   } else {
+    console.log('[Btn] Already connected, sending create_room');
     ws.send(JSON.stringify({ type: 'create_room' }));
   }
 });

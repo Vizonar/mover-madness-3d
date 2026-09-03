@@ -4,8 +4,8 @@
   "description": "3D cooperative physics game server",
   "type": "module",
   "scripts": {
-    "start": "tsx server.ts",
-    "dev": "tsx server.ts"
+    "start": "node --import tsx/esm server.ts",
+    "dev": "node --import tsx/esm server.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
